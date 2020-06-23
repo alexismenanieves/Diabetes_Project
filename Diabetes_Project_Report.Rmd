@@ -31,6 +31,8 @@ if(!require(kernlab)) install.packages("kernlab", repos = repo)
 if(!require(gam)) install.packages("gam", repos = repo)
 ```
 
+The dataset was uploaded into GitHub, thus we can access the data.
+
 ```{r}
 # Read the file
 url <- paste0("https://raw.githubusercontent.com/alexismenanieves/",
@@ -38,16 +40,18 @@ url <- paste0("https://raw.githubusercontent.com/alexismenanieves/",
 dataset <- read.csv(url)
 ```
 
+In order to analyze the dataset, we see the dimensions, variable types and a summary.
 
 ```{r}
 # A first view of the data, dimensions and variables
 dim(dataset)
 as_tibble(dataset)
 summary(dataset)
-rbind(table(dataset$Outcome),prop.table(table(dataset$Outcome)))
 dataset %>% group_by(Outcome) %>% 
   summarise(count = n()) %>% mutate(freq = count/sum(count))
 ```
+
+We can see that the dataset has 768 observations, 8 variables and 1 outcome. The outcome however is an integer, it's better to transform it into a factor. What draws our attention is that the outcome is imbalanced
 
 ```{r}
 # Let's apply some changes on the outcome name and encoding

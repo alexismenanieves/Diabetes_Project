@@ -94,7 +94,7 @@ final_model <- predict(model_KNN, newdata = validation_set)
 confusionMatrix(final_model, validation_set$Diabetes)$overall[["Accuracy"]]
 
 # Step 5. Create an ensemble model and select the best model --------------
-models <- c("knn","rpart","rf","gbm","svmLinear")
+models <- c("knn","rpart","rf","gamLoess","gbm","svmLinear")
 knn_tg = data.frame(k = seq(3,50,1))
 rpart_tg = data.frame(cp = seq(0,0.1,len = 50))
 rf_tg = data.frame(mtry = seq(1,8,1))
@@ -102,20 +102,29 @@ gbm_tg = expand.grid(n.trees = c(100, 1000, 10000),
                      interaction.depth = c(1,3,5),
                      shrinkage = 0.001,
                      n.minobsinnode = 1)
-svmLinear_tg = data.frame(C = c(0, 0.01, 0.05, 0.1, seq(0.25, 2, 0.25)))
+svmLinear_tg = data.frame(C = c(0.01, 0.05, 0.1, seq(0.25, 2, 0.25)))
 
 suppressMessages(fits <- lapply(models, function(model){ 
   print(model)
-  train(Diabetes ~ ., 
-        data = train_set, 
-        trControl = trainControl(sampling = "up"),
-        tuneGrid = switch(model,
-                          "knn" = knn_tg,
-                          "rpart" = rpart_tg,
-                          "rf" = rf_tg,
-                          "gbm" = gbm_tg,
-                          "svmLinear" = svmLinear_tg),
+  if(model == "gbm"){
+    train(Diabetes ~ ., 
+          data = train_set, 
+          trControl = trainControl(sampling = "up"),
+          tuneGrid = gbm_tg,
+          method = model,
+          verbose = FALSE)
+  } else {
+    train(Diabetes ~ ., 
+          data = train_set, 
+          trControl = trainControl(sampling = "up"),
+          tuneGrid = switch(model,
+                            "knn" = knn_tg,
+                            "rpart" = rpart_tg,
+                            "rf" = rf_tg,
+                            "gamLoess" = NULL,
+                            "svmLinear" = svmLinear_tg),
         method = model)
+  }
 }))
 
 names(fits) <- models
@@ -135,3 +144,11 @@ ind <- acc >= mean(acc)
 best_votes <- rowMeans(pred[,ind]=="Yes")
 best_y_hat <- ifelse(best_votes > 0.5, "Yes", "No")
 mean(best_y_hat == validation_set$Diabetes)
+
+# Step 6. Evaluate the best ensemble model on the test dataset ------------
+test_set <- predict(preProcess_data, newdata = test_set)
+test_pred <- sapply(fits, function(object) 
+  predict(object, newdata = test_set))
+test_votes <- rowMeans(test_pred[,ind]=="Yes")
+test_y_hat <- ifelse(test_votes > 0.5, "Yes", "No")
+mean(test_y_hat == test_set$Diabetes)
