@@ -1,5 +1,6 @@
 # Header ------------------------------------------------------------------
 # Diabetes Project Script
+# Author: Manuel Alexis Mena Nieves
 # Date: June 22,2020
 # Repo: https://github.com/alexismenanieves/Diabetes_Project
 
