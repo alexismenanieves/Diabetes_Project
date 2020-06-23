@@ -6,15 +6,26 @@
 # Step 1. Getting the data ------------------------------------------------
 
 # Load the libraries
-library(tidyverse)
-library(caret)
-library(skimr)
-library(randomForest)
+repo <- "http://cran.us.r-project.org"
+if(!require(tidyverse)) install.packages("tidyverse", repos = repo)
+if(!require(caret)) install.packages("caret", repos = repo)
+if(!require(skimr)) install.packages("skimr", repos = repo)
+if(!require(rpart)) install.packages("rpart", repos = repo)
+if(!require(randomForest)) install.packages("randomForest", repos = repo)
+if(!require(gbm)) install.packages("gbm", repos = repo)
+if(!require(kernlab) install.packages("kernlab", repos = repo)
 
 # Read the file
 url <- paste0("https://raw.githubusercontent.com/alexismenanieves/",
               "Diabetes_Project/master/dataset.txt")
 dataset <- read.csv(url)
+
+# A first view of the data, dimensions and variables
+dim(dataset)
+as_tibble(dataset)
+summary(dataset)
+dataset %>% group_by(Outcome) %>% 
+  summarise(count = n()) %>% mutate(freq = count/sum(count))
 
 # Let's apply some changes on the outcome name and encoding
 dataset$Outcome <- as.factor(ifelse(dataset$Outcome == 1,"Yes","No"))
@@ -26,7 +37,7 @@ tt_index <- createDataPartition(dataset$Age, times = 1, p = 0.9, list = FALSE)
 train_set <- dataset[tt_index,]
 test_set <- dataset[-tt_index,]
 
-# Step 2. Exploratory Analysis -------------------------------------
+# Step 2. Exploratory Analysis --------------------------------------------
 
 # See how many observations and variables are available
 str(train_set)
@@ -46,7 +57,7 @@ train_set %>% gather(key = "Variable", value = "Measure", -Diabetes) %>%
   ggplot(aes(Diabetes, Measure, fill = Diabetes)) + geom_boxplot() + 
   facet_wrap(~Variable,ncol = 4, scales = "free")
 
-# Step 3. Preprocess the data --------------------------------------
+# Step 3. Preprocess the data ---------------------------------------------
 
 # Set seed
 set.seed(1979)
@@ -59,25 +70,29 @@ train_set <- train_set[tv_index,]
 preProcess_data <- preProcess(train_set, method = c("medianImpute","range"))
 train_set <- predict(preProcess_data, newdata = train_set)
 
-# Step 3. Create a simple ML model and obtain metrics
+# Step 4. Create a simple ML model and obtain metrics ---------------------
+
+# Train knn on train set for a first glimpse of accuracy
 model_KNN <- train(Diabetes ~., 
                    data = train_set, 
                    trControl = trainControl(sampling = "down"),
                    tuneGrid = data.frame(k = seq(3,50,1)),
                    method = "knn")
-model_KNN
+
+# Plot accuracy 
 plot(model_KNN, main = "Accuracy of KNN model")
+# Plot variable importance
 plot(varImp(model_KNN), main = "Variable importance for KNN model")
 model_KNN$bestTune
 max(model_KNN$results$Accuracy)
 
-# Step 4. Apply the model on validation set by preprocessing and predicting
+# Predict the results using knn model and evaluate accuracy
 validation_set <- predict(preProcess_data, newdata = validation_set)
 final_model <- predict(model_KNN, newdata = validation_set)
 confusionMatrix(final_model, validation_set$Diabetes)$overall[["Accuracy"]]
 
-# Step 5. Create an ensemble model and select the best model
-models <- c("knn","rpart","rf","gbm","monmlp")
+# Step 5. Create an ensemble model and select the best model --------------
+models <- c("knn","rpart","rf","gbm","svmLinear")
 knn_tg = data.frame(k = seq(3,50,1))
 rpart_tg = data.frame(cp = seq(0,0.1,len = 50))
 rf_tg = data.frame(mtry = seq(1,8,1))
@@ -85,6 +100,7 @@ gbm_tg = expand.grid(n.trees = c(100, 1000, 10000),
                      interaction.depth = c(1,3,5),
                      shrinkage = 0.001,
                      n.minobsinnode = 1)
+svmLinear_tg = data.frame(C = c(0, 0.01, 0.05, 0.1, seq(0.25, 2, 0.25)))
 
 suppressMessages(fits <- lapply(models, function(model){ 
   print(model)
@@ -96,7 +112,7 @@ suppressMessages(fits <- lapply(models, function(model){
                           "rpart" = rpart_tg,
                           "rf" = rf_tg,
                           "gbm" = gbm_tg,
-                          "monmlp" = NULL),
+                          "svmLinear" = svmLinear_tg),
         method = model)
 }))
 
