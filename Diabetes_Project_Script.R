@@ -10,7 +10,6 @@
 repo <- "http://cran.us.r-project.org"
 if(!require(tidyverse)) install.packages("tidyverse", repos = repo)
 if(!require(caret)) install.packages("caret", repos = repo)
-if(!require(skimr)) install.packages("skimr", repos = repo)
 if(!require(rpart)) install.packages("rpart", repos = repo)
 if(!require(randomForest)) install.packages("randomForest", repos = repo)
 if(!require(gbm)) install.packages("gbm", repos = repo)
@@ -43,14 +42,28 @@ test_set <- dataset[-tt_index,]
 
 # See how many observations and variables are available
 str(train_set)
+
 # Glimpse of mean, median and NA's
 summary(train_set)
+
 # Count how many zeros are in each variable
 colSums(train_set[,-9] == 0, na.rm = TRUE)
-# Convert zeros to NA
-train_set[,c(2:6)] <- apply(train_set[,c(2:6)], 2, function(x) {ifelse(x==0, NA, x)} )
+
 # See the descriptive stats from the data
-skim(train_set)
+train_set %>% gather(key = "Variable", value = "Measure", -Diabetes) %>% 
+  ggplot(aes(Measure)) + geom_histogram(alpha = 0.7, fill = "darkorange") +
+  facet_wrap(~Variable, ncol = 4, scales = "free")
+
+# Calculate correlation
+train_set[,-9] %>% 
+  rename(DPF = DiabetesPedigreeFunction, 
+         SkThick = SkinThickness,
+         BloodPress = BloodPressure) %>% 
+  cor(use = "complete.obs") %>% format(digits = 2)
+
+# Convert zeros to NA
+train_set[,c(2:6)] <- apply(train_set[,c(2:6)], 2, function(x) {ifelse(x==0, NA, x)})
+
 # Plot all variables and see the effects on outcome
 train_set %>% gather(key = "Variable", value = "Measure", -Diabetes) %>% 
   ggplot(aes(Measure, fill = Diabetes)) + geom_density(alpha = 0.3) + 
@@ -77,7 +90,7 @@ train_set <- predict(preProcess_data, newdata = train_set)
 # Train knn on train set for a first glimpse of accuracy
 model_KNN <- train(Diabetes ~., 
                    data = train_set, 
-                   trControl = trainControl(sampling = "down"),
+                   trControl = trainControl(sampling = "up"),
                    tuneGrid = data.frame(k = seq(3,50,1)),
                    method = "knn")
 
@@ -146,6 +159,7 @@ best_y_hat <- ifelse(best_votes > 0.5, "Yes", "No")
 mean(best_y_hat == validation_set$Diabetes)
 
 # Step 6. Evaluate the best ensemble model on the test dataset ------------
+
 test_set <- predict(preProcess_data, newdata = test_set)
 test_pred <- sapply(fits, function(object) 
   predict(object, newdata = test_set))

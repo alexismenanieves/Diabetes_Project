@@ -15,10 +15,13 @@ The goal of the project is to diagnostically predict whether or not a patient ha
 
 ## 2. Getting the data
 
-The following code will be used to download the dataset. We begin loading the tidyverse, caret, skimr and some useful machine learning  libraries:
+The following code will be used to download the dataset. We begin loading the tidyverse, caret, skimr and some useful machine learning libraries:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE, message=FALSE}
 # Load the libraries
 repo <- "http://cran.us.r-project.org"
 if(!require(tidyverse)) install.packages("tidyverse", repos = repo)
@@ -47,17 +50,28 @@ In order to analyze the dataset, we see the dimensions, variable types and a sum
 dim(dataset)
 as_tibble(dataset)
 summary(dataset)
+```
+
+We can see that the dataset has 768 observations and 9 variables. When we explore the dataset we see that all variables are numbers, that there are some NAs and that the last column is the outcome. In the summary we see that some variables have a zero value, like glucose, blood pressure, insulin, skin thickness or BMI. The median age of the patients is 33, and the median number of pregnancies is 3.
+
+We can see through a table the number of subjects with diabetes or not:
+
+```{r}
 dataset %>% group_by(Outcome) %>% 
   summarise(count = n()) %>% mutate(freq = count/sum(count))
 ```
 
-We can see that the dataset has 768 observations, 8 variables and 1 outcome. The outcome however is an integer, it's better to transform it into a factor. What draws our attention is that the outcome is imbalanced
+What draws our attention is that the outcome is imbalanced, because only 34.8% of patients had diabetes. 
+
+Since the outcome is an integer let's transform it into a factor and rename it "Diabetes".
 
 ```{r}
 # Let's apply some changes on the outcome name and encoding
 dataset$Outcome <- as.factor(ifelse(dataset$Outcome == 1,"Yes","No"))
 names(dataset)[9]<- "Diabetes"
 ```
+
+Let's divide our dataset into a train set and a test set. The test set will be used as an unseen data to test the prediction power of our model.
 
 ```{r}
 # Let's divide the dataset into a train and test set
@@ -67,10 +81,75 @@ train_set <- dataset[tt_index,]
 test_set <- dataset[-tt_index,]
 ```
 
+We can display the structure of our train set.
+
 ```{r}
 # See how many observations and variables are available
 str(train_set)
 # Glimpse of mean, median and NA's
 summary(train_set)
 ```
+
+```{r}
+# Count how many zeros are in each variable
+colSums(train_set[,-9] == 0, na.rm = TRUE)
+```
+
+An histogram plot for each predictor can show us the data distribution and the outliers.
+
+```{r}
+train_set %>% gather(key = "Variable", value = "Measure", -Diabetes) %>% 
+  ggplot(aes(Measure)) + geom_histogram(alpha = 0.7, fill = "darkorange") +
+  facet_wrap(~Variable, ncol = 4, scales = "free")
+```
+
+We can see that in blood pressure, BMI, glucose, insulin and skin thickness the zero values are outliers because of the distribution shape. We can not say the same for the Diabetes Pedigree Function. The decision taken was to convert the zero values into NAs.
+
+```{r}
+# Convert zeros to NA
+train_set[,c(2:6)] <- apply(train_set[,c(2:6)], 2, function(x) {ifelse(x==0, NA, x)} )
+```
+
+Let's see how correlated are the variables using the cor function: 
+
+```{r}
+train_set[,-9] %>% 
+  rename(DPF = DiabetesPedigreeFunction, 
+         SkThick = SkinThickness,
+         BloodPress = BloodPressure) %>% 
+  cor(use = "complete.obs") %>% format(digits = 2)
+```
+
+We can see that pregnancies and age are correlated which is expected.
+
+Now we can explore further, by using the density plot for each variable and stratifying by the outcome. 
+
+```{r}
+train_set %>% gather(key = "Variable", value = "Measure", -Diabetes) %>% 
+  ggplot(aes(Measure, fill = Diabetes)) + geom_density(alpha = 0.3) + 
+  facet_wrap(~Variable,ncol = 4, scales = "free")
+```
+
+We see somehow a mean shift between diabetes and no diabetes in age, BMI, glucose, insulin and skin thickness predictors. 
+
+```{r}
+train_set %>% gather(key = "Variable", value = "Measure", -Diabetes) %>% 
+  ggplot(aes(Diabetes, Measure, fill = Diabetes)) + geom_boxplot() + 
+  facet_wrap(~Variable,ncol = 4, scales = "free")
+```
+
+```{r}
+# Set seed
+set.seed(1979)
+# Divide the train set into a new train set and a validation set
+tv_index <- createDataPartition(train_set$Age, times = 1, p = 0.8, list = FALSE)
+validation_set <- train_set[-tv_index,]
+train_set <- train_set[tv_index,]
+```
+
+```{r}
+preProcess_data <- preProcess(train_set, method = c("medianImpute","range"))
+train_set <- predict(preProcess_data, newdata = train_set)
+```
+
 
