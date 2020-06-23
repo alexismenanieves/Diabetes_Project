@@ -1,0 +1,72 @@
+---
+title: "Diabetes Project Report"
+author: "Manuel Alexis Mena Nieves"
+date: "6/23/2020"
+output: pdf_document
+---
+
+## 1. Introduction
+
+This project report is about creating a model prediction system for the HarvardX Data Science professional certificate program, using the Indians Pima Diabetes Dataset, originally from the National Institute of Diabetes and Digestive and Kidney Diseases.
+
+This dataset consists of eight medical predictor variables and one target variable, which shows if the patient has diabetes or not. Predictor variables includes the number of pregnancies the patient has had, their BMI, insulin level, age, skin thickness, glucose level, blood pressure and computed value called Diabetes Pedrigree Function.
+
+The goal of the project is to diagnostically predict whether or not a patient has diabetes, based on certain diagnostic measurements included in the dataset using all the tools shown throughout the courses in this series. To accomplish this an exploratory analysis was done, in order to understand the data and summarize their main characteristics with tables and visual methods. After this, a machine learning model and an ensemble model was created to predict whether or not the patients in the dataset have diabetes.
+
+## 2. Getting the data
+
+The following code will be used to download the dataset. We begin loading the tidyverse, caret, skimr and some useful machine learning  libraries:
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Load the libraries
+repo <- "http://cran.us.r-project.org"
+if(!require(tidyverse)) install.packages("tidyverse", repos = repo)
+if(!require(caret)) install.packages("caret", repos = repo)
+if(!require(skimr)) install.packages("skimr", repos = repo)
+if(!require(rpart)) install.packages("rpart", repos = repo)
+if(!require(randomForest)) install.packages("randomForest", repos = repo)
+if(!require(gbm)) install.packages("gbm", repos = repo)
+if(!require(kernlab)) install.packages("kernlab", repos = repo)
+if(!require(gam)) install.packages("gam", repos = repo)
+```
+
+```{r}
+# Read the file
+url <- paste0("https://raw.githubusercontent.com/alexismenanieves/",
+              "Diabetes_Project/master/dataset.txt")
+dataset <- read.csv(url)
+```
+
+
+```{r}
+# A first view of the data, dimensions and variables
+dim(dataset)
+as_tibble(dataset)
+summary(dataset)
+rbind(table(dataset$Outcome),prop.table(table(dataset$Outcome)))
+dataset %>% group_by(Outcome) %>% 
+  summarise(count = n()) %>% mutate(freq = count/sum(count))
+```
+
+```{r}
+# Let's apply some changes on the outcome name and encoding
+dataset$Outcome <- as.factor(ifelse(dataset$Outcome == 1,"Yes","No"))
+names(dataset)[9]<- "Diabetes"
+```
+
+```{r}
+# Let's divide the dataset into a train and test set
+set.seed(1979)
+tt_index <- createDataPartition(dataset$Age, times = 1, p = 0.9, list = FALSE)
+train_set <- dataset[tt_index,]
+test_set <- dataset[-tt_index,]
+```
+
+```{r}
+# See how many observations and variables are available
+str(train_set)
+# Glimpse of mean, median and NA's
+summary(train_set)
+```
+
