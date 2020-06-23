@@ -14,7 +14,8 @@ if(!require(skimr)) install.packages("skimr", repos = repo)
 if(!require(rpart)) install.packages("rpart", repos = repo)
 if(!require(randomForest)) install.packages("randomForest", repos = repo)
 if(!require(gbm)) install.packages("gbm", repos = repo)
-if(!require(kernlab) install.packages("kernlab", repos = repo)
+if(!require(kernlab)) install.packages("kernlab", repos = repo)
+if(!require(gam)) install.packages("gam", repos = repo)
 
 # Read the file
 url <- paste0("https://raw.githubusercontent.com/alexismenanieves/",
