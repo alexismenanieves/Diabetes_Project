@@ -12,7 +12,9 @@ library(skimr)
 library(randomForest)
 
 # Read the file
-dataset <- read.csv("dataset.txt", sep = ",", header = TRUE)
+url <- paste0("https://raw.githubusercontent.com/alexismenanieves/",
+              "Diabetes_Project/master/dataset.txt")
+dataset <- read.csv(url)
 
 # Let's apply some changes on the outcome name and encoding
 dataset$Outcome <- as.factor(ifelse(dataset$Outcome == 1,"Yes","No"))
