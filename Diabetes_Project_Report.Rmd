@@ -15,7 +15,7 @@ The goal of the project is to diagnostically predict whether or not a patient ha
 
 ## 2. Getting the data
 
-The following code will be used to download the dataset. We begin loading the tidyverse, caret, skimr and some useful machine learning libraries:
+The following code will be used to download the dataset. We begin by loading the tidyverse, caret, skimr and some useful machine learning libraries:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -61,9 +61,9 @@ dataset %>% group_by(Outcome) %>%
   summarise(count = n()) %>% mutate(freq = count/sum(count))
 ```
 
-What draws our attention is that the outcome is imbalanced, because only 34.8% of patients had diabetes. 
+What draws our attention is that the outcome is imbalanced, because only 34.8% of patients have diabetes. 
 
-Since the outcome is an integer let's transform it into a factor and rename it "Diabetes".
+Since the outcome is an integer let's transform it into a factor and rename it as "Diabetes".
 
 ```{r}
 # Let's apply some changes on the outcome name and encoding
@@ -80,6 +80,8 @@ tt_index <- createDataPartition(dataset$Age, times = 1, p = 0.9, list = FALSE)
 train_set <- dataset[tt_index,]
 test_set <- dataset[-tt_index,]
 ```
+
+## 3. Exploratory Analysis
 
 We can display the structure of our train set.
 
@@ -110,7 +112,7 @@ We can see that in blood pressure, BMI, glucose, insulin and skin thickness the 
 train_set[,c(2:6)] <- apply(train_set[,c(2:6)], 2, function(x) {ifelse(x==0, NA, x)} )
 ```
 
-Let's see how correlated are the variables using the cor function: 
+Let's see how correlated are the variables using the "cor" function: 
 
 ```{r}
 train_set[,-9] %>% 
@@ -130,13 +132,19 @@ train_set %>% gather(key = "Variable", value = "Measure", -Diabetes) %>%
   facet_wrap(~Variable,ncol = 4, scales = "free")
 ```
 
-We see somehow a mean shift between diabetes and no diabetes in age, BMI, glucose, insulin and skin thickness predictors. 
+We see somehow a mean shift between diabetes and no diabetes in age, BMI, glucose, insulin and skin thickness predictors. Let's see a similar plot but using a box-plot.
 
 ```{r}
 train_set %>% gather(key = "Variable", value = "Measure", -Diabetes) %>% 
   ggplot(aes(Diabetes, Measure, fill = Diabetes)) + geom_boxplot() + 
   facet_wrap(~Variable,ncol = 4, scales = "free")
 ```
+
+We can see clearly here that glucose has a better mean shift than insulin, so that predictor cold be an important predictor for diabetes.
+
+## 4. Preprocessing the data
+
+Before creating a model, we have to preprocess our data. Since we want to tune our model we split our train dataset into a new train dataset and a validation dataset. 
 
 ```{r}
 # Set seed
@@ -147,9 +155,151 @@ validation_set <- train_set[-tv_index,]
 train_set <- train_set[tv_index,]
 ```
 
+We have to replace the missing values, so we impute them with the median value. We can normalize values so it ranges between 0 and 1 by using range. This method in caret is called preProcess.
+
 ```{r}
 preProcess_data <- preProcess(train_set, method = c("medianImpute","range"))
 train_set <- predict(preProcess_data, newdata = train_set)
 ```
 
+## 5. Creating a simple model
 
+Our first model can be the KNN, it's simple to understand and we can tune it faster. Because the class imbalance in the dataset, we can use the parameter "sampling" and as our dataset is not so big, we use the argument "up". We will tune our model with neighbors from 3 to 50.
+
+```{r}
+# Train knn on train set for a first glimpse of accuracy
+model_KNN <- train(Diabetes ~., 
+                   data = train_set, 
+                   trControl = trainControl(sampling = "up"),
+                   tuneGrid = data.frame(k = seq(3,50,1)),
+                   method = "knn")
+```
+
+Let's plot the accuracy for each neighbor k in our model:
+
+```{r}
+# Plot accuracy 
+plot(model_KNN, main = "Accuracy of KNN model")
+```
+
+The best accuracy obtained is over 0.71. Let's plot the variable importance for this model:
+
+```{r}
+# Plot variable importance
+plot(varImp(model_KNN), main = "Variable importance for KNN model")
+```
+
+We can see that glucose, age, BMI and insulin are the top four variables in our model. We can calculate the max accuracy and k in the model:
+
+```{r}
+model_KNN$bestTune
+max(model_KNN$results$Accuracy)
+```
+
+## 5. Ensemble Model
+
+We can create an ensemble model using multiple algorithms and keeping the best methods. The models selected are a non-parametric method (KNN), a classification tree (rpart), a random forest (rf), a generative additive model (gamLoess), a gradient boosting method (gbm) and a support vector machine (svmLinear). For each model we define a tuning parameter, except for gamLoess.
+
+```{r}
+models <- c("knn","rpart","rf","gamLoess","gbm","svmLinear")
+knn_tg = data.frame(k = seq(3,50,1))
+rpart_tg = data.frame(cp = seq(0,0.1,len = 50))
+rf_tg = data.frame(mtry = seq(1,8,1))
+gbm_tg = expand.grid(n.trees = c(100, 1000, 10000),
+                     interaction.depth = c(1,3,5),
+                     shrinkage = 0.001,
+                     n.minobsinnode = 1)
+svmLinear_tg = data.frame(C = c(0.01, 0.05, 0.1, seq(0.25, 2, 0.25)))
+```
+
+We use the lapply function to train each model, sampling up our data to address the imbalance and in the case of the gbm method we use the argument verbose as false to avoid the calculation text output given in each iteration.
+
+```{r, warning=FALSE}
+suppressMessages(fits <- lapply(models, function(model){ 
+  print(model)
+  if(model == "gbm"){
+    train(Diabetes ~ ., 
+          data = train_set, 
+          trControl = trainControl(sampling = "up"),
+          tuneGrid = gbm_tg,
+          method = model,
+          verbose = FALSE)
+  } else {
+    train(Diabetes ~ ., 
+          data = train_set, 
+          trControl = trainControl(sampling = "up"),
+          tuneGrid = switch(model,
+                            "knn" = knn_tg,
+                            "rpart" = rpart_tg,
+                            "rf" = rf_tg,
+                            "gamLoess" = NULL,
+                            "svmLinear" = svmLinear_tg),
+        method = model)
+  }
+}))
+```
+
+Now we have a list for each model, so we give them their corresponding name.
+
+```{r}
+names(fits) <- models
+```
+
+We use sapply to create a matrix of predictions for the validation test. For each column we will have a "Yes" or "No" outcome. 
+
+```{r, warning=FALSE}
+pred <- sapply(fits, function(object) 
+  predict(object, newdata = validation_set))
+dim(pred)
+```
+
+Now we can compute accuracy for each model on the validation set:
+
+```{r}
+acc <- colMeans(pred == validation_set$Diabetes)
+acc
+```
+
+We can proceed to calculate the mean accuracy. It turns out to be 0.758, which is an improvement. 
+
+```{r}
+mean(acc)
+```
+
+We build an ensemble prediction by majority vote, using the validation set.
+
+```{r}
+votes <- rowMeans(pred == "Yes")
+y_hat <- ifelse(votes > 0.5, "Yes", "No")
+mean(y_hat == validation_set$Diabetes)
+```
+
+We now remove the methods that do not perform well and then we re do the ensemble. The index selected will be every method accuracy that is better than the mean accuracy calculated.
+
+```{r}
+ind <- acc >= mean(acc)
+best_votes <- rowMeans(pred[,ind]=="Yes")
+best_y_hat <- ifelse(best_votes > 0.5, "Yes", "No")
+mean(best_y_hat == validation_set$Diabetes)
+```
+
+We can see that the best accuracy of this ensemble model is 0.782, which is better than our first attempt with the KNN algorithm. The methods who performed well were "rf", "gamLoess", "gbm" and "svmLinear".
+
+## 5. Evaluation on the test set
+
+```{r, warning=FALSE}
+test_set <- predict(preProcess_data, newdata = test_set)
+test_pred <- sapply(fits, function(object) 
+  predict(object, newdata = test_set))
+test_votes <- rowMeans(test_pred[,ind]=="Yes")
+test_y_hat <- ifelse(test_votes > 0.5, "Yes", "No")
+mean(test_y_hat == test_set$Diabetes)
+```
+
+## 6. Conclusions
+
+- It is important to make an exploratory data analysis, we could detect the high quantity of zero values, the outliers and the imbalance in our data.
+- The plots were useful to understand the data distribution and supported the decision of converting the zero values into NAs. We also could see that some variables had more importance than others, like glucose, age, BMI and Insulin.
+- In our first approach, using the KNN algorithm we could get an accuracy of 0.702 on the validation set, which is our starting point to improve the accuracy in subsequent models.
+- Using the ensemble model we could get an accuracy of 0.782, which is an improvement over the first model we tried. The algorithms selected for 
+- On the test set, considering it an unseen data we could get an accuracy 0.773.  
